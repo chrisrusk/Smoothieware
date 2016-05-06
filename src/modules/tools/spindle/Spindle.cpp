@@ -149,21 +149,17 @@ uint32_t Spindle::on_update_speed(uint32_t dummy)
     if (t == 0) {
         current_rpm = 0;
     } else {
-        float new_rpm = 1000000 * 60.0f / (t * pulses_per_rev);
+        new_rpm = 1000000 * 60.0f / (t * pulses_per_rev);
         current_rpm = smoothing_decay * new_rpm + (1.0f - smoothing_decay) * current_rpm;
     }
 
     if (spindle_on) {
-        float error = target_rpm - current_rpm;
-
+        error = target_rpm - current_rpm;
         current_I_value += error * UPDATE_FREQ;
         current_I_value = confine(current_I_value, -1.0f, 1.0f);
-        
         new_pwm = control_P_term * error + current_I_value*control_I_term + control_D_term * ((error - prev_error)/UPDATE_FREQ);
-        
         new_pwm = confine(new_pwm, min_pwm_dutycycle, max_pwm_dutycycle);
         prev_error = error;
-
         current_pwm_value = new_pwm;
     } else {
         current_I_value = 0;
@@ -178,7 +174,6 @@ if (PID_enabled == false)
         spindle_pin->write(1.0f - current_pwm_value);
     else
         spindle_pin->write(current_pwm_value);
-
     return 0;
 }
 
@@ -186,7 +181,6 @@ if (PID_enabled == false)
 void Spindle::on_gcode_received(void* argument)
 {
     Gcode *gcode = static_cast<Gcode *>(argument);
-
     if (gcode->has_m) {
         if (gcode->m == 957) {
             // M957: report spindle speed
