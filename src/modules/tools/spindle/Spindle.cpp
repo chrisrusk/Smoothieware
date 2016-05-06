@@ -39,7 +39,7 @@
 #define spindle_min_pwm_dutycycle_checksum  CHECKSUM("spindle_min_pwm_dutycycle")
 #define spindle_max_rpm_checksum			CHECKSUM("spindle_max_rpm")
 
-#define UPDATE_FREQ 1000
+#define UPDATE_FREQ 20		//update rpm every 20ms
 
 Spindle::Spindle()
 {
@@ -52,8 +52,9 @@ void Spindle::on_module_loaded()
     current_rpm = 0;
     current_I_value = 0;
     current_pwm_value = 0;
-    time_since_update = 0;
+    count_since_irq = 0;
     spindle_on = true;
+    prev_error = 0;
 
     if (!THEKERNEL->config->value(spindle_enable_checksum)->by_default(false)->as_bool()) {
         delete this; // Spindle control module is disabled
@@ -115,11 +116,11 @@ void Spindle::on_module_loaded()
         delete smoothie_pin;
     }
 
-    THEKERNEL->slow_ticker->attach(UPDATE_FREQ, this, &Spindle::on_update_speed);
+    THEKERNEL->slow_ticker->attach(UPDATE_FREQ, this, &Spindle::on_update_speed);  //updates rpm at the update frequency
     register_for_event(ON_GCODE_RECEIVED);
 }
 
-void Spindle::on_pin_rise()
+void Spindle::on_pin_rise()			//counts interupts
 {
     uint32_t timestamp = us_ticker_read();
     last_time = timestamp - last_edge;
@@ -129,17 +130,18 @@ void Spindle::on_pin_rise()
 
 uint32_t Spindle::on_update_speed(uint32_t dummy)
 {
-    // If we don't get any interrupts for 1 second, set current RPM to 0
   if (PID_enabled == true)
   {
+    // If we don't get any interrupts for 1 second, set current RPM to 0
     uint32_t new_irq = irq_count;
     if (last_irq != new_irq)
-        time_since_update = 0;
+        count_since_irq = 0;
     else
-        time_since_update++;
+        count_since_irq++;
+        
     last_irq = new_irq;
 
-    if (time_since_update > UPDATE_FREQ)
+    if ((count_since_irq*UPDATE_FREQ) > 1000)
         last_time = 0;
 
     // Calculate current RPM
@@ -154,14 +156,12 @@ uint32_t Spindle::on_update_speed(uint32_t dummy)
     if (spindle_on) {
         float error = target_rpm - current_rpm;
 
-        current_I_value += control_I_term * error * 1.0f / UPDATE_FREQ;
+        current_I_value += error * UPDATE_FREQ;
         current_I_value = confine(current_I_value, -1.0f, 1.0f);
-
-        float new_pwm = 0.5f;
-        new_pwm += control_P_term * error;
-        new_pwm += current_I_value;
-        new_pwm += control_D_term * UPDATE_FREQ * (error - prev_error);
-        new_pwm = confine(new_pwm, 0.0f, 1.0f);
+        
+        new_pwm = control_P_term * error + current_I_value*control_I_term + control_D_term * ((error - prev_error)/UPDATE_FREQ);
+        
+        new_pwm = confine(new_pwm, min_pwm_dutycycle, max_pwm_dutycycle);
         prev_error = error;
 
         current_pwm_value = new_pwm;
