@@ -34,6 +34,10 @@
 #define spindle_control_I_checksum       CHECKSUM("spindle_control_I")
 #define spindle_control_D_checksum       CHECKSUM("spindle_control_D")
 #define spindle_control_smoothing_checksum CHECKSUM("spindle_control_smoothing")
+#define spindle_PID_enabled_checksum		CHECKSUM("spindle_PID_enabled")
+#define spindle_max_pwm_dutycycle_checksum  CHECKSUM("spindle_max_pwm_dutycycle")
+#define spindle_min_pwm_dutycycle_checksum  CHECKSUM("spindle_min_pwm_dutycycle")
+#define spindle_max_rpm_checksum			CHECKSUM("spindle_max_rpm")
 
 #define UPDATE_FREQ 1000
 
@@ -61,6 +65,10 @@ void Spindle::on_module_loaded()
     control_P_term = THEKERNEL->config->value(spindle_control_P_checksum)->by_default(0.0001f)->as_number();
     control_I_term = THEKERNEL->config->value(spindle_control_I_checksum)->by_default(0.0001f)->as_number();
     control_D_term = THEKERNEL->config->value(spindle_control_D_checksum)->by_default(0.0001f)->as_number();
+    max_pwm_dutycycle = THEKERNEL->config->value(spindle_max_pwm_dutycycle_checksum)->by_default(1.0f)->as_number();
+    min_pwm_dutycycle = THEKERNEL->config->value(spindle_min_pwm_dutycycle_checksum)->by_default(0.0f)->as_number();
+    PID_enabled = THEKERNEL->config->value(spindle_PID_enabled_checksum)->by_default(false)->as_bool();
+    max_rpm = THEKERNEL->config->value(spindle_max_rpm_checksum)->by_default(5000)->as_number();
 
     // Smoothing value is low pass filter time constant in seconds.
     float smoothing_time = THEKERNEL->config->value(spindle_control_smoothing_checksum)->by_default(0.1f)->as_number();
@@ -89,6 +97,7 @@ void Spindle::on_module_loaded()
     spindle_pin->write(output_inverted ? 1 : 0);
 
     // Get the pin for interrupt
+    if (PID_enabled == true)
     {
         Pin *smoothie_pin = new Pin();
         smoothie_pin->from_string(THEKERNEL->config->value(spindle_feedback_pin_checksum)->by_default("nc")->as_string());
@@ -121,6 +130,8 @@ void Spindle::on_pin_rise()
 uint32_t Spindle::on_update_speed(uint32_t dummy)
 {
     // If we don't get any interrupts for 1 second, set current RPM to 0
+  if (PID_enabled == true)
+  {
     uint32_t new_irq = irq_count;
     if (last_irq != new_irq)
         time_since_update = 0;
@@ -158,7 +169,11 @@ uint32_t Spindle::on_update_speed(uint32_t dummy)
         current_I_value = 0;
         current_pwm_value = 0;
     }
-
+}
+if (PID_enabled == false)
+	{
+		current_pwm_value = min_pwm_dutycycle + (max_pwm_dutycycle-min_pwm_dutycycle)*(target_rpm/max_rpm);
+	}
     if (output_inverted)
         spindle_pin->write(1.0f - current_pwm_value);
     else
@@ -199,6 +214,7 @@ void Spindle::on_gcode_received(void* argument)
 
         } else if (gcode->m == 5) {
             THEKERNEL->conveyor->wait_for_empty_queue();
+            spindle_pin->write(min_pwm_dutycycle);
             spindle_on = false;
         }
 
