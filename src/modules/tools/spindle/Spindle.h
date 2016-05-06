@@ -40,7 +40,7 @@ class Spindle: public Module {
         float current_I_value;
         float prev_error;
         float current_pwm_value;
-        int time_since_update;
+        int count_since_irq;
         uint32_t last_irq;
 
         // Values from config
