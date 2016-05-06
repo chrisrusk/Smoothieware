@@ -49,6 +49,10 @@ class Spindle: public Module {
         float control_I_term;
         float control_D_term;
         float smoothing_decay;
+        float max_pwm_dutycycle;
+        float min_pwm_dutycycle;
+        float max_rpm;
+        bool PID_enabled;
 
         // These fields are updated by the interrupt
         uint32_t last_edge; // Timestamp of last edge
